@@ -67,7 +67,7 @@ def user_pass(message):
 
         markup = default_markup()
         bot.send_message(message.chat.id, f'Привіт, {message.from_user.first_name}! Чим можу бути корисним?',
-                          reply_markup=markup)
+                         reply_markup=markup)
     else:
         bot.send_message(message.chat.id, "Користувача не знайдено")
 
@@ -88,29 +88,37 @@ def default_markup():
 
 @bot.message_handler(func=lambda message: user_found and message.text == 'Переглянути меню')
 def show_menu(message):
-    if message.text == 'Переглянути меню':
-        bot.send_message(message.chat.id, 'Дивимось меню...')
-        markup = types.InlineKeyboardMarkup()
-        markup.add(types.InlineKeyboardButton('Понеділок', callback_data='Понеділок'))
-        markup.add(types.InlineKeyboardButton('Вівторок', callback_data='Вівторок'))
-        markup.add(types.InlineKeyboardButton('Середа', callback_data='Середа'))
-        markup.add(types.InlineKeyboardButton('Четвер', callback_data='Четвер'))
-        markup.add(types.InlineKeyboardButton('П\'ятниця', callback_data='П''ятниця'))
-        bot.send_message(message.chat.id, f'Оберіть день, щоб оглянути меню:',
-                         reply_markup=markup)
+    if user.id == message.from_user.id:
+        if message.text == 'Переглянути меню':
+            bot.send_message(message.chat.id, 'Дивимось меню...')
+            markup = types.InlineKeyboardMarkup()
+            markup.add(types.InlineKeyboardButton('Понеділок', callback_data='Понеділок'))
+            markup.add(types.InlineKeyboardButton('Вівторок', callback_data='Вівторок'))
+            markup.add(types.InlineKeyboardButton('Середа', callback_data='Середа'))
+            markup.add(types.InlineKeyboardButton('Четвер', callback_data='Четвер'))
+            markup.add(types.InlineKeyboardButton('П\'ятниця', callback_data='П''ятниця'))
+            bot.send_message(message.chat.id, f'Оберіть день, щоб оглянути меню:',
+                             reply_markup=markup)
+    else:
+        bot.send_message(message.chat.id, 'Ви не авторизовані. Будь ласка, авторизуйтесь '
+                                          '(Скористайтесь командою /start_bot)')
 
 
 @bot.message_handler(func=lambda message: user_found and message.text == 'Сформувати власне меню')
 def create_menu(message):
-    if message.text == 'Сформувати власне меню':
-        markup = types.InlineKeyboardMarkup()
-        markup.add(types.InlineKeyboardButton('Понеділок', callback_data='form_menu_monday'))
-        markup.add(types.InlineKeyboardButton('Вівторок', callback_data='form_menu_tuesday'))
-        markup.add(types.InlineKeyboardButton('Середа', callback_data='form_menu_wednesday'))
-        markup.add(types.InlineKeyboardButton('Четвер', callback_data='form_menu_thursday'))
-        markup.add(types.InlineKeyboardButton('П\'ятниця', callback_data='form_menu_friday'))
-        bot.send_message(message.chat.id, f'Оберіть день, щоб сформувати меню:',
-                         reply_markup=markup)
+    if user.id == message.from_user.id:
+        if message.text == 'Сформувати власне меню':
+            markup = types.InlineKeyboardMarkup()
+            markup.add(types.InlineKeyboardButton('Понеділок', callback_data='form_menu_monday'))
+            markup.add(types.InlineKeyboardButton('Вівторок', callback_data='form_menu_tuesday'))
+            markup.add(types.InlineKeyboardButton('Середа', callback_data='form_menu_wednesday'))
+            markup.add(types.InlineKeyboardButton('Четвер', callback_data='form_menu_thursday'))
+            markup.add(types.InlineKeyboardButton('П\'ятниця', callback_data='form_menu_friday'))
+            bot.send_message(message.chat.id, f'Оберіть день, щоб сформувати меню:',
+                             reply_markup=markup)
+    else:
+        bot.send_message(message.chat.id, 'Ви не авторизовані. Будь ласка, авторизуйтесь '
+                                          '(Скористайтесь командою /start_bot)')
 
 
 @bot.callback_query_handler(func=lambda call: call.data == 'form_menu_monday' or call.data == 'form_menu_tuesday'
@@ -132,7 +140,8 @@ def callback_form_menu(callback):
 
     if selected_day is not None:
         conn, cur = connect()
-
+        cur.execute("select day from days where id = %s", (selected_day,))
+        bot.send_message(message.chat.id, f'Обираємо меню на день: {cur.fetchone()[0]}')
         dish_types = ['first_dishes', 'second_dishes', 'desserts', 'drinks']
 
         for dish_type in dish_types:
@@ -143,8 +152,7 @@ def callback_form_menu(callback):
             for item in user_data:
                 options[item[0]] = item[1]
 
-            poll = bot.send_poll(message.chat.id, "Обери страву:", list(options.values()), is_anonymous=False,
-                                 )
+            poll = bot.send_poll(message.chat.id, "Обери страву:", list(options.values()), is_anonymous=False)
             poll_list[dish_type] = poll.poll.id
 
         cur.close()
@@ -161,7 +169,7 @@ def handle_poll_answer(poll_answer):
     poll_id = poll_answer.poll_id
     option_ids = poll_answer.option_ids
 
-    bot.send_message(user_id, f"You voted for option with IDs: {option_ids}.")
+    bot.send_message(user_id, 'Вибір зроблено.')
 
     conn, cur = connect()
     matching_key = None
@@ -181,45 +189,65 @@ def handle_poll_answer(poll_answer):
 
 @bot.message_handler(func=lambda message: user_found and message.text == 'Переглянути створене меню')
 def create_menu(message):
-    if message.text == 'Переглянути створене меню':
-        conn, cur = connect()
-        cur.execute("SELECT days.day FROM days LEFT JOIN chosen_meal_schedule ch_m ON days.id = ch_m.day_id "
-                    "AND ch_m.user_id = %s WHERE ch_m.user_id IS NULL", (user.id,))
-        default_days = cur.fetchall()
+    if user.id == message.from_user.id:
+        if message.text == 'Переглянути створене меню':
+            conn, cur = connect()
+            cur.execute("SELECT days.day FROM days LEFT JOIN chosen_meal_schedule ch_m ON days.id = ch_m.day_id "
+                        "AND ch_m.user_id = %s WHERE ch_m.user_id IS NULL", (user.id,))
+            default_days = cur.fetchall()
 
-        cur.execute("select distinct days.day from days LEFT join chosen_meal_schedule ch_m on days.id = ch_m.day_id "
-                    "AND ch_m.user_id = %s where dish_id is not null", (user.id,))
-        formed_days = cur.fetchall()
+            cur.execute("select distinct days.day from days LEFT join chosen_meal_schedule ch_m on days.id = ch_m.day_id "
+                        "AND ch_m.user_id = %s where dish_id is not null", (user.id,))
+            formed_days = cur.fetchall()
 
-        cur.execute("select days.day from days")
-        all_days = cur.fetchall()
+            cur.execute("select days.day from days")
+            all_days = cur.fetchall()
 
-        for day in all_days:
-            if day in formed_days:
-                cur.execute("select dishes.name from chosen_meal_schedule ch_m "
-                            "inner join dishes on dishes.id = ch_m.dish_id "
-                            "inner join days on days.id = ch_m.day_id "
-                            "where user_id = %s and days.day = %s "
-                            "order by dishes.dish_type_id",
-                                (user.id, day,))
-                user_data = cur.fetchall()
-                user_message = f'{day[0]}:\n'
-                for item in user_data:
-                    user_message += f'{item[0]}\n'
-                bot.send_message(message.chat.id, user_message)
-            elif day in default_days:
-                cur.execute(
-                    "select dishes.name from meal_schedule m_sch inner join dishes on dishes.id = m_sch.dish_id "
-                    "inner join days on days.id = m_sch.day_id where days.day in (%s) order by dishes.dish_type_id",
-                    (day,))
-                user_data = cur.fetchall()
-                user_message = f'{day[0]}. Звичайне меню:\n'
-                for item in user_data:
-                    user_message += f'{item[0]}\n'
-                bot.send_message(message.chat.id, user_message)
+            for day in all_days:
+                markup = types.InlineKeyboardMarkup()
+                if day in formed_days:
+                    cur.execute("select dishes.name from chosen_meal_schedule ch_m "
+                                "inner join dishes on dishes.id = ch_m.dish_id "
+                                "inner join days on days.id = ch_m.day_id "
+                                "where user_id = %s and days.day = %s "
+                                "order by dishes.dish_type_id",
+                                    (user.id, day,))
+                    user_data = cur.fetchall()
+                    user_message = f'{day[0]}:\n'
+                    for item in user_data:
+                        user_message += f'{item[0]}\n'
+                    markup.add(types.InlineKeyboardButton('Очистити створене меню', callback_data=f'clean_up_{day}'))
+                    bot.send_message(message.chat.id, user_message, reply_markup=markup)
+                elif day in default_days:
+                    cur.execute(
+                        "select dishes.name from meal_schedule m_sch inner join dishes on dishes.id = m_sch.dish_id "
+                        "inner join days on days.id = m_sch.day_id where days.day in (%s) order by dishes.dish_type_id",
+                        (day,))
+                    user_data = cur.fetchall()
+                    user_message = f'{day[0]}. Звичайне меню:\n'
+                    for item in user_data:
+                        user_message += f'{item[0]}\n'
+                    bot.send_message(message.chat.id, user_message)
 
-        cur.close()
-        conn.close()
+            cur.close()
+            conn.close()
+    else:
+        bot.send_message(message.chat.id, 'Ви не авторизовані. Будь ласка, авторизуйтесь '
+                                          '(Скористайтесь командою /start_bot)')
+
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith('clean_up_'))
+def clean_up_menu(callback):
+    day = callback.data.replace('clean_up_', '').strip("(),'")
+
+    conn, cur = connect()
+    cur.execute("DELETE FROM chosen_meal_schedule "
+                "WHERE user_id = %s AND day_id IN (SELECT id FROM days WHERE day = %s);", (user.id, day,))
+
+    conn.commit()
+    bot.send_message(callback.message.chat.id, f'Меню на {day} очищено.')
+    cur.close()
+    conn.close()
 
 
 @bot.callback_query_handler(func=lambda call: call.data == 'Понеділок' or call.data == 'Вівторок'
